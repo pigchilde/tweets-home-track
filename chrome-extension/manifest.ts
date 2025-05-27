@@ -68,6 +68,10 @@ const manifest = {
       matches: ['http://*/*', 'https://*/*', '<all_urls>'],
       css: ['content.css'],
     },
+    {
+      matches: ['https://x.com/*', 'https://twitter.com/*'],
+      js: ['content/twitter-scraper.iife.js'],
+    },
   ],
   devtools_page: 'devtools/index.html',
   web_accessible_resources: [
