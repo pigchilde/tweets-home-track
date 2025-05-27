@@ -70,7 +70,7 @@ const manifest = {
     },
     {
       matches: ['https://x.com/*', 'https://twitter.com/*'],
-      js: ['content/twitter-scraper.iife.js'],
+      js: ['content/twitterScraper.iife.js'],
     },
   ],
   devtools_page: 'devtools/index.html',
