@@ -139,4 +139,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false; 
 });
 
-console.log("Background: Event listeners set up. Edit 'chrome-extension/src/background/index.ts' and save to reload.");
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab.id) {
+    console.error("Background: Clicked action on a tab without an ID:", tab);
+    return;
+  }
+
+  // Optional: Check if you want to restrict side panel opening to specific URLs
+  // if (tab.url && (tab.url.startsWith("http://") || tab.url.startsWith("https://"))) {
+  //   // Open the side panel on the current tab
+  // }
+
+  console.log(`Background: Action clicked on tab ${tab.id}. Opening side panel.`);
+  try {
+    await chrome.sidePanel.open({ tabId: tab.id });
+  } catch (error) {
+    console.error(`Background: Error opening side panel for tab ${tab.id}:`, error);
+  }
+});
+
+console.log("Background: Event listeners set up, including chrome.action.onClicked. Edit 'chrome-extension/src/background/index.ts' and save to reload.");
