@@ -1,16 +1,18 @@
-// Tweet structure as expected by the SidePanel (RawTweet type)
+// Tweet structure as expected by the SidePanel
 interface RawTweet {
   author: string;
-  timestamp: string; // 'YYYY/MM/DD HH:MM:SS'
+  displayTimestamp: string; // 'YYYY/MM/DD HH:MM:SS'
   content: string;
+  rawDatetime: string;      // The ISO string like '2023-10-27T05:23:17.000Z' from <time datetime="...">
 }
 
-// For internal use in content script to add an ID for deduplication during scraping
-interface TweetWithId extends RawTweet {
-  id: string; 
-}
+// Not used directly anymore as ID generation is primarily for SidePanel, 
+// but keeping structure for clarity if local ID generation were needed.
+// interface TweetWithId extends RawTweet {
+//   id: string; 
+// }
 
-function formatTimestamp(dateTimeString: string | null): string {
+function formatDisplayTimestamp(dateTimeString: string | null): string {
   if (!dateTimeString) {
     return 'N/A';
   }
@@ -29,19 +31,8 @@ function formatTimestamp(dateTimeString: string | null): string {
   }
 }
 
-// Utility to generate a simple hash-like ID from key elements of a tweet
-// This is similar to the one in SidePanel.tsx but used here for local deduplication
-function generateTweetIdForContentScript(tweet: RawTweet): string {
-  const keyString = `${tweet.timestamp}-${tweet.author}-${tweet.content.substring(0, 50)}`;
-  let hash = 0;
-  for (let i = 0; i < keyString.length; i++) {
-    const char = keyString.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0; // Convert to 32bit integer
-  }
-  return `cs-tweet-${Math.abs(hash).toString(16)}`;
-}
-
+// Utility to generate a simple hash-like ID from key elements of a tweet was removed as it's not strictly needed
+// for the current deduplication strategy which happens in SidePanel or via uniqueKey in scrolling.
 
 function scrapeCurrentViewPortTweets(): RawTweet[] {
   const tweetElements = document.querySelectorAll('article[data-testid="tweet"]');
@@ -86,14 +77,14 @@ function scrapeCurrentViewPortTweets(): RawTweet[] {
       const author = `${authorName} (${authorHandle})`;
 
       const timeElement = tweetElement.querySelector('time');
-      const rawTimestamp = timeElement?.getAttribute('datetime');
-      const timestamp = formatTimestamp(rawTimestamp || null);
+      const rawDatetime = timeElement?.getAttribute('datetime') || new Date().toISOString(); // Fallback to current ISO if missing
+      const displayTimestamp = formatDisplayTimestamp(rawDatetime);
 
       const tweetTextElement = tweetElement.querySelector('[data-testid="tweetText"]');
       const content = tweetTextElement?.textContent?.trim() || 'N/A';
 
-      if (content !== 'N/A' && timestamp !== 'N/A' && timestamp !== 'Invalid Date') {
-        currentTweets.push({ author, timestamp, content });
+      if (content !== 'N/A' && displayTimestamp !== 'N/A' && displayTimestamp !== 'Invalid Date') {
+        currentTweets.push({ author, displayTimestamp, content, rawDatetime });
       }
     } catch (error) {
       console.error('Error scraping individual tweet in current view:', error, tweetElement);
@@ -120,11 +111,10 @@ async function scrapeTweetsWithScrolling(): Promise<RawTweet[]> {
     let foundNewTweetsInThisScroll = false;
 
     newTweetsInView.forEach(tweet => {
-      // Create a unique identifier for the tweet based on its content to avoid duplicates
-      // Using author + timestamp + first 100 chars of content as a pseudo-key
-      const uniqueKey = `${tweet.author}-${tweet.timestamp}-${tweet.content.substring(0, 100)}`;
+      // Create a unique identifier for the tweet based on its precise rawDatetime and author
+      const uniqueKey = `${tweet.author}-${tweet.rawDatetime}`;
       if (!collectedTweetUniqueIdentifiers.has(uniqueKey)) {
-        collectedTweets.push(tweet);
+        collectedTweets.push(tweet); // Store the RawTweet object
         collectedTweetUniqueIdentifiers.add(uniqueKey);
         foundNewTweetsInThisScroll = true;
       }
@@ -161,10 +151,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     scrapeTweetsWithScrolling().then(tweets => {
       if (tweets.length > 0) {
-        console.log('ContentScript (TwitterScraper): Scraped tweets with scrolling:', tweets.length, "tweets");
+        console.log('ContentScript (TwitterScraper): Scraped tweets with scrolling:', tweets.length, "tweets.", tweets);
         chrome.runtime.sendMessage({
           type: 'SCRAPE_COMPLETE_RESPONSE',
-          payload: tweets, // Sending RawTweet[]
+          payload: tweets, 
         });
       } else {
         console.log('ContentScript (TwitterScraper): No tweets found on the page after scrolling.');

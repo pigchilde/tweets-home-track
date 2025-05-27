@@ -41,5 +41,47 @@
   },
   "displayErrorReset": {
     "message": "Run Again"
+  },
+  "sidePanelHeader": {
+    "message": "Twitter Feed"
+  },
+  "refreshButtonLoading": {
+    "message": "Refreshing..."
+  },
+  "refreshButtonIdle": {
+    "message": "Refresh"
+  },
+  "notificationNoNewTweets": {
+    "message": "No new tweets found."
+  },
+  "notificationFetchedNewTweets": {
+    "message": "Fetched $COUNT$ new tweet(s).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      }
+    }
+  },
+  "errorFailedToLoadStoredTweets": {
+    "message": "Failed to load stored tweets."
+  },
+  "errorFailedToSaveNewTweets": {
+    "message": "Failed to save new tweets."
+  },
+  "errorUnknownFetching": {
+    "message": "An unknown error occurred while fetching tweets."
+  },
+  "errorPrefix": {
+    "message": "Error:"
+  },
+  "loadingTweets": {
+    "message": "Loading tweets..."
+  },
+  "noTweetsToDisplay": {
+    "message": "No tweets to display."
+  },
+  "noTweetsHelperText": {
+    "message": "Click 'Refresh' to fetch tweets or check your Twitter feed."
   }
 }

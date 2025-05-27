@@ -5,6 +5,9 @@ let refreshIntervalId: NodeJS.Timeout | null = null;
 let twitterTabId: number | null = null;
 const REFRESH_INTERVAL_MS = 10000; // 10 seconds
 
+let isReloadingForScrape = false;
+let reloadingTabId: number | null = null;
+
 exampleThemeStorage.get().then(theme => {
   console.log('Background: Initial theme:', theme);
 });
@@ -36,24 +39,70 @@ function startPeriodicRefresh() {
       stopPeriodicRefresh();
       return;
     }
-    console.log(`Background: Periodic refresh - Sending EXECUTE_SCRAPE_REQUEST to tab ${twitterTabId}`);
-    chrome.tabs.sendMessage(twitterTabId, { type: 'EXECUTE_SCRAPE_REQUEST' }, response => {
+    if (twitterTabId === null) { // Should be caught by the check before setInterval, but good to have.
+      console.warn('Background: Interval triggered but twitterTabId is null. Stopping.');
+      stopPeriodicRefresh(); // This will also clear isReloadingForScrape and reloadingTabId
+      return;
+    }
+    console.log(`Background: Periodic refresh - Initiating reload for tab ${twitterTabId}`);
+    isReloadingForScrape = true;
+    reloadingTabId = twitterTabId;
+
+    chrome.tabs.reload(twitterTabId, (/* no callback argument here */) => {
       if (chrome.runtime.lastError) {
-        console.error(`Background: Periodic refresh - Error sending message to tab ${twitterTabId}:`, chrome.runtime.lastError.message);
-        // Check if the error is due to the tab not being available
-        if (chrome.runtime.lastError.message?.includes('No tab with id') || chrome.runtime.lastError.message?.includes('cannot be found')) {
-          console.log('Background: Periodic refresh - Twitter tab likely closed. Stopping refresh.');
-          stopPeriodicRefresh();
-          twitterTabId = null; // Invalidate the tab ID
-        }
-        // Optionally, notify side panel about this error if it's critical
-        // chrome.runtime.sendMessage({ type: 'FETCH_TWEETS_ERROR', error: 'Periodic refresh failed: Twitter tab lost.' });
-      } else if (response) {
-        console.log(`Background: Periodic refresh - Received immediate response from content script on tab ${twitterTabId}:`, response);
+        console.error(`Background: Error initiating reload for tab ${twitterTabId}:`, chrome.runtime.lastError.message);
+        // If reload command fails (e.g. tab closed before reload initiated)
+        stopPeriodicRefresh(); // This will clear flags and interval
+        twitterTabId = null; // Invalidate the tab ID as we can't reload it
+        isReloadingForScrape = false;
+        reloadingTabId = null;
+      } else {
+        console.log(`Background: Reload initiated for tab ${twitterTabId}. Waiting for onUpdated 'complete' status.`);
+        // Now we wait for the chrome.tabs.onUpdated listener
       }
     });
   }, REFRESH_INTERVAL_MS);
 }
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  // Check if this update is the one we triggered for scraping
+  if (
+    isReloadingForScrape &&
+    tabId === reloadingTabId &&
+    changeInfo.status === 'complete'
+  ) {
+    console.log(`Background: Tab ${tabId} finished reloading and is ready for scraping.`);
+    
+    // Reset flags immediately
+    isReloadingForScrape = false;
+    reloadingTabId = null;
+
+    // Check if the tab URL is still a Twitter/X home page, as user might have navigated away during reload
+    // or if the reload resulted in an error page (though tab.url might not always reflect internal errors well)
+    if (tab.url && (tab.url.startsWith("https://x.com/home") || tab.url.startsWith("https://twitter.com/home"))) {
+      console.log(`Background: Sending EXECUTE_SCRAPE_REQUEST to reloaded tab ${tabId}`);
+      chrome.tabs.sendMessage(tabId, { type: 'EXECUTE_SCRAPE_REQUEST' }, response => {
+        if (chrome.runtime.lastError) {
+          console.error(`Background: Error sending EXECUTE_SCRAPE_REQUEST to reloaded tab ${tabId}:`, chrome.runtime.lastError.message);
+          // If sending message fails after reload (e.g. content script issues, or tab closed very fast)
+          stopPeriodicRefresh(); // Stop further attempts
+          // twitterTabId = null; // Consider invalidating twitterTabId here too
+        } else if (response) {
+          console.log(`Background: Immediate response from content script on reloaded tab ${tabId}:`, response);
+        }
+      });
+    } else {
+      console.warn(`Background: Tab ${tabId} completed loading but is no longer on a Twitter/X home URL (${tab.url}) or might be an error page. Scrape aborted. Stopping periodic refresh.`);
+      stopPeriodicRefresh();
+      twitterTabId = null; // Tab is no longer suitable
+    }
+  } else if (tabId === reloadingTabId && changeInfo.status === 'complete' && !isReloadingForScrape) {
+    // This case handles if a tab we were tracking for reload completes, but we're no longer in a "reloading for scrape" state.
+    // This might happen if stopPeriodicRefresh was called for some other reason after reload started but before it completed.
+    console.log(`Background: Tab ${reloadingTabId} completed loading, but isReloadingForScrape is false. No action taken.`);
+    reloadingTabId = null; // Clear the tracked tab ID.
+  }
+});
 
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

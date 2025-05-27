@@ -1,0 +1,47 @@
+{
+  "sidePanelHeader": {
+    "message": "推特动态"
+  },
+  "refreshButtonLoading": {
+    "message": "刷新中..."
+  },
+  "refreshButtonIdle": {
+    "message": "刷新"
+  },
+  "notificationNoNewTweets": {
+    "message": "未发现新推文。"
+  },
+  "notificationFetchedNewTweets": {
+    "message": "抓取到 $COUNT$ 条新推文。",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      }
+    }
+  },
+  "errorFailedToLoadStoredTweets": {
+    "message": "加载已存储推文失败。"
+  },
+  "errorFailedToSaveNewTweets": {
+    "message": "保存新推文失败。"
+  },
+  "errorUnknownFetching": {
+    "message": "抓取推文时发生未知错误。"
+  },
+  "errorPrefix": {
+    "message": "错误："
+  },
+  "loadingTweets": {
+    "message": "加载推文中..."
+  },
+  "noTweetsToDisplay": {
+    "message": "无推文可显示。"
+  },
+  "noTweetsHelperText": {
+    "message": "点击“刷新”以抓取推文，或检查您的推特动态。"
+  },
+  "toggleTheme": {
+    "message": "切换主题"
+  }
+}
