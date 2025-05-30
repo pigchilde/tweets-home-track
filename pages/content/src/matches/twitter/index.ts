@@ -81,21 +81,145 @@ const parseRelativeTime = (timeText: string): Date => {
 // 提取推文数据
 const extractTweets = async (): Promise<TwitterPost[]> => {
   const tweets: TwitterPost[] = [];
+  let tweetsSkippedAdCount = 0; // 用于调试，记录跳过的广告数量
 
   // 等待推文容器加载
   await waitForElement('[data-testid="primaryColumn"]');
 
   // 查找所有推文
   const tweetElements = Array.from(document.querySelectorAll('[data-testid="tweet"]'));
+  //const tweetHTMLStrings = tweetElements.map(element => element.outerHTML).join(''); // 如果需要，可以取消注释
+  // console.log(tweetHTMLStrings, 'tweetHTMLStrings');
+
+  // 辅助函数：检查某个元素是否在主要推文内容区域内
+  const isWithinTweetText = (element: Element, tweetElement: Element): boolean => {
+    const tweetTextEl = tweetElement.querySelector('[data-testid="tweetText"]');
+    return tweetTextEl ? tweetTextEl.contains(element) : false;
+  };
 
   for (const tweetElement of tweetElements) {
-    try {
-      // 检查是否是广告
-      const promotedLabel = tweetElement.querySelector('[data-testid="socialContext"]');
-      if (promotedLabel && promotedLabel.textContent?.includes('Promoted')) {
-        continue; // 跳过广告推文
-      }
+    let isAd = false;
 
+    // --- 广告检测逻辑开始 ---
+
+    // 方法 1: 检查明确的 "Ad" 文本标签 (最可靠)
+    // 这个 "Ad" 标签通常是一个独立的 <span>，位于推文头部，而不是在 data-testid="tweetText" 内部。
+    const allSpans = tweetElement.querySelectorAll('span');
+    for (const span of allSpans) {
+      const spanText = span.textContent?.trim();
+      if (spanText === 'Ad') {
+        // 确认这个 "Ad" 标签不在主要推文内容 [data-testid="tweetText"] 或用户名 [data-testid="User-Name"] 内部
+        // (以防有用户名为 "Ad" 或推文内容包含单词 "Ad")
+        const userNameEl = tweetElement.querySelector('[data-testid="User-Name"]');
+        if (!isWithinTweetText(span, tweetElement) && (!userNameEl || !userNameEl.contains(span))) {
+          isAd = true;
+          console.log(
+            'Filter: Skipped - Explicit "Ad" label found.',
+            tweetElement.textContent?.substring(0, 100).trim(),
+          );
+          break;
+        }
+      }
+    }
+    if (isAd) {
+      tweetsSkippedAdCount++;
+      continue;
+    }
+
+    // 方法 2: 检查推广卡片 (Promoted Card) 特征
+    const cardWrapper = tweetElement.querySelector('[data-testid="card.wrapper"]');
+    if (cardWrapper) {
+      // 检查卡片链接是否包含 "twclid" (Twitter Click ID)
+      if (cardWrapper.querySelector('a[href*="twclid="]')) {
+        isAd = true;
+        console.log(
+          'Filter: Skipped - Card wrapper with twclid found.',
+          tweetElement.textContent?.substring(0, 100).trim(),
+        );
+      } else {
+        // 检查卡片下方是否有 "From [domain.com]" 格式的来源链接文本
+        // 通常这个链接是 cardWrapper 父元素的子元素，或者是 cardWrapper 内部的一个链接
+        const cardParent = cardWrapper.parentElement;
+        const linksToCheck = Array.from(cardWrapper.querySelectorAll('a')); // 检查卡片内部链接
+        if (cardParent) {
+          linksToCheck.push(...Array.from(cardParent.querySelectorAll('a'))); // 也检查卡片同级或父级附近链接
+        }
+
+        for (const link of linksToCheck) {
+          if (link.textContent?.startsWith('From ')) {
+            // 确保这个链接确实指向外部域
+            if (link.href && (link.href.startsWith('http:') || link.href.startsWith('https:'))) {
+              // 避免误判内部链接或非域名文本
+              const domainText = link.textContent.substring(5).trim(); // "From " 之后的部分
+              if (domainText.includes('.')) {
+                // 简单判断是否像域名
+                isAd = true;
+                console.log(
+                  'Filter: Skipped - Card with "From domain.com" link found.',
+                  tweetElement.textContent?.substring(0, 100).trim(),
+                );
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+    if (isAd) {
+      tweetsSkippedAdCount++;
+      continue;
+    }
+
+    // 方法 3: 检查 data-testid="placementTracking" (常见于视频广告)
+    if (tweetElement.querySelector('[data-testid="placementTracking"]')) {
+      isAd = true;
+      console.log('Filter: Skipped - placementTracking found.', tweetElement.textContent?.substring(0, 100).trim());
+    }
+    if (isAd) {
+      tweetsSkippedAdCount++;
+      continue;
+    }
+
+    // 方法 4: 检查 socialContext 中是否包含 "Promoted" (你原来的逻辑，作为补充)
+    const socialContextPromoted = tweetElement.querySelector('[data-testid="socialContext"]');
+    if (socialContextPromoted && socialContextPromoted.textContent?.toLowerCase().includes('promoted')) {
+      isAd = true;
+      console.log(
+        'Filter: Skipped - socialContext "Promoted" found.',
+        tweetElement.textContent?.substring(0, 100).trim(),
+      );
+    }
+    if (isAd) {
+      tweetsSkippedAdCount++;
+      continue;
+    }
+
+    // 方法 5: 检查 aria-label 是否表明是广告 (更通用的检查)
+    const ariaLabelAdElements = tweetElement.querySelectorAll('[aria-label]');
+    for (const el of ariaLabelAdElements) {
+      const labelText = el.getAttribute('aria-label')?.toLowerCase() || '';
+      const adTerms = ['ad', 'advertisement', 'promoted', 'sponsored'];
+      // 精确匹配或包含特定广告词汇，同时避免误判 (如 "add", "load")
+      if (adTerms.some(term => labelText === term || labelText.includes(term + ' '))) {
+        if (!isWithinTweetText(el, tweetElement)) {
+          // 确保不是推文内容的一部分
+          isAd = true;
+          console.log(
+            `Filter: Skipped - Aria-label "${labelText}" indicating ad found.`,
+            tweetElement.textContent?.substring(0, 100).trim(),
+          );
+          break;
+        }
+      }
+    }
+    if (isAd) {
+      tweetsSkippedAdCount++;
+      continue;
+    }
+
+    // --- 广告检测逻辑结束 ---
+
+    try {
       // 获取作者名称
       const authorElement = tweetElement.querySelector('[data-testid="User-Name"] span');
       const author = authorElement?.textContent || 'Unknown';
@@ -112,32 +236,87 @@ const extractTweets = async (): Promise<TwitterPost[]> => {
       if (dateTimeAttr) {
         publishTime = new Date(dateTimeAttr);
       } else {
-        // 尝试从显示的相对时间解析
         const timeText = timeElement?.textContent || '';
-        publishTime = parseRelativeTime(timeText);
+        // 你需要确保 parseRelativeTime 函数能够正确处理各种相对时间格式
+        // 如果广告没有时间戳，这里可能会出错或返回无效日期，需要额外处理
+        try {
+          publishTime = parseRelativeTime(timeText); // 确保这个函数存在且健壮
+          if (isNaN(publishTime.getTime())) {
+            // parseRelativeTime 可能返回 Invalid Date
+            console.warn(
+              'Could not parse time, defaulting for ID generation:',
+              timeText,
+              tweetElement.outerHTML.substring(0, 200),
+            );
+            publishTime = new Date(0); // 或者使用其他默认值
+          }
+        } catch (timeParseError) {
+          console.warn(
+            'Error in parseRelativeTime, defaulting for ID generation:',
+            timeParseError,
+            tweetElement.outerHTML.substring(0, 200),
+          );
+          publishTime = new Date(0); // 默认时间，避免ID生成失败
+        }
       }
 
-      // 生成唯一ID（基于内容和作者的哈希）
-      const id = btoa(encodeURIComponent(author + content + publishTime.getTime()))
-        .replace(/[^a-zA-Z0-9]/g, '')
-        .substring(0, 16);
+      // 生成唯一ID
+      // 注意: btoa 对非 ASCII 字符可能会出问题。
+      // 如果 author 或 content 包含中文等字符，直接 btoa(encodeURIComponent(...)) 可能不是最佳选择。
+      // encodeURIComponent 会产生 %XX 格式，btoa 再次编码它们。
+      // 一个更安全的方式是先将字符串转为 UTF-8 字节流，再进行 Base64 编码，或者使用成熟的哈希库。
+      // 但为保持与你原代码一致，暂时保留，但请注意潜在问题。
+      let idSource = author + content + publishTime.getTime();
+      let id = '';
+      try {
+        // 尝试将字符串转换为UTF-8字节，然后进行Base64编码
+        const utf8Encoder = new TextEncoder();
+        const utf8Bytes = utf8Encoder.encode(idSource);
+        id = btoa(String.fromCharCode(...Array.from(utf8Bytes))) // 将字节转为Latin1字符给btoa
+          .replace(/[^a-zA-Z0-9]/g, '')
+          .substring(0, 16);
+      } catch (e) {
+        console.warn('Error generating ID with TextEncoder/btoa, falling back to simpler method:', e);
+        // 降级方案（可能在某些包含特殊字符的author/content上仍有问题）
+        id = btoa(unescape(encodeURIComponent(idSource))) // 尝试兼容更多字符
+          .replace(/[^a-zA-Z0-9]/g, '')
+          .substring(0, 16);
+      }
+      if (!id) {
+        // 如果ID仍然为空（不太可能，但作为防护）
+        id = `fallback_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+      }
 
       const tweet: TwitterPost = {
         id,
         author,
         content,
-        timestamp: formatTimestamp(publishTime),
+        timestamp: formatTimestamp(publishTime), // 确保 formatTimestamp 健壮
         publishTime: publishTime.toISOString(),
       };
 
       tweets.push(tweet);
     } catch (error) {
-      console.error('Error extracting tweet:', error);
+      console.error('Error extracting tweet details:', error, tweetElement.outerHTML);
     }
   }
-
+  if (tweetsSkippedAdCount > 0) {
+    console.log(`Total ads skipped: ${tweetsSkippedAdCount}`);
+  }
   return tweets;
 };
+
+// --- 你可能需要实现的辅助函数 (如果尚未定义) ---
+// declare function waitForElement(selector: string): Promise<void>;
+// declare function parseRelativeTime(timeText: string): Date; // 这个函数对正确性至关重要
+// declare function formatTimestamp(date: Date): string;
+// interface TwitterPost {
+//   id: string;
+//   author: string;
+//   content: string;
+//   timestamp: string;
+//   publishTime: string;
+// }
 
 // 主要的推文监控函数
 const monitorTwitter = async () => {
