@@ -38,7 +38,6 @@ const manifest = {
     type: 'module',
   },
   action: {
-    default_popup: 'popup/index.html',
     default_icon: 'icon-34.png',
   },
   chrome_url_overrides: {
@@ -55,6 +54,10 @@ const manifest = {
     {
       matches: ['https://example.com/*'],
       js: ['content/example.iife.js'],
+    },
+    {
+      matches: ['https://x.com/*', 'https://twitter.com/*'],
+      js: ['content/twitter.iife.js'],
     },
     {
       matches: ['http://*/*', 'https://*/*', '<all_urls>'],

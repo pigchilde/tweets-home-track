@@ -5,7 +5,7 @@
   },
   "extensionName": {
     "description": "Extension name",
-    "message": "Chrome extension boilerplate"
+    "message": "个人推文监控"
   },
   "toggleTheme": {
     "message": "Toggle theme"
